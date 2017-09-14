@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <title>Meet and Engage Plugin Demo</title>
+  <style>
+    body {
+      min-width: 400px;
+      background: #f5f5f5;
+      color: #424242;
+      font-family: "Trebuchet MS", Helvetica, sans-serif;
+      text-align: center;
+    }
+
+    #warning {
+      display: none;
+      color: #d50000;
+      font-style: italic;
+    }
+
+    #rooms>div {
+      display: inline-block;
+      width: 100px;
+      height: 100px;
+      margin: 5px 10px;
+      background: white;
+      border: 1px dotted #9e9e9e;
+      border-radius: 5px;
+      transition: width 0.2s ease-in-out, height 0.2s ease-in-out;
+    }
+
+    #active-room {
+      display: block;
+      margin: 10px auto;
+      width: 350px;
+      height: 500px;
+      margin: 10px auto;
+      background: white;
+      border: 1px dotted #9e9e9e;
+      border-radius: 5px;
+    }
+
+    .room {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100px;
+      height: 100px;
+      background: white;
+      border: 1px solid #9e9e9e;
+      border-radius: 5px;
+      box-shadow: 0px 2px 2px 1px rgba(0, 0, 0, 0.2);
+    }
+
+    .room h2 {
+      text-align: center;
+      font-size: 1em;
+    }
+
+    .room>*:not(h2) {
+      display: none;
+      width: inherit;
+      height: inherit;
+    }
+
+    .room.active {
+      width: 350px;
+      height: 500px;
+      z-index: 1000;
+    }
+
+    .room.active>h2 {
+      display: none;
+    }
+
+    .room.active>* {
+      display: block;
+    }
+
+    .room.transition {
+      transition: top 0.5s ease, left 0.5s ease, width 0.5s ease, height 0.5s ease;
+    }
+
+    #info {
+      width: 350px;
+      margin: 0 auto;
+      text-align: left;
+    }
+
+    #info h3 {
+      white-space: nowrap;
+    }
+
+    #info h3 span {
+      font-style: italic;
+      color: #64dd17;
+      font-size: 0.9em;
+    }
+
+    #info h3 a {
+      color: #757575;
+    }
+
+    #info h3 a:visited {
+      color: #757575;
+    }
+
+    #info h3 a:hover {
+      color: #757575;
+    }
+
+    #info h3 a:active {
+      color: #757575;
+    }
+
+    #events-room table {
+      padding: 10px;
+      box-sizing: border-box;
+      text-align: center;
+      border-collapse: separate;
+      border-spacing: 10px;
+    }
+
+    #events-room table tr td:first-child {
+      width: 99%;
+      border-bottom: 1px dotted #9e9e9e;
+    }
+
+    #events-room table tr td button:hover {
+      cursor: pointer;
+    }
+
+    #lobby-room div {
+      padding: 10px;
+      box-sizing: border-box;
+    }
+
+    #exitlobby-room div {
+      padding: 10px;
+      box-sizing: border-box;
+    }
+
+    #active-room>form>div {
+      margin: 20px auto;
+    }
+
+    #active-room>form input[type=text] {
+      display: block;
+      width: 80%;
+      margin: 10px auto;
+      padding: 0.2em;
+    }
+
+    #programmatic-logon-box {
+      width: 80%;
+      padding: 10px;
+      border: 1px dotted #9e9e9e;
+    }
+  </style>
+
+  <script src="https://test.meetandengage.com/api/1.0/meetandengage.js"></script>
+
+  <script>
+    (function() {
+      var SURFACES = [
+        "events-room",
+        "login-room",
+        "logonerror-room",
+        "lobby-room",
+        "chat-room",
+        "exitlobby-room",
+        "registration-room",
+        "registered-room",
+        "registrationdisabled-room",
+        "registrationfull-room",
+        "missedevent-room",
+        "121queue-room"
+      ];
+      var accountName; // Meet and Engage account name
+      var rooms = [];
+      var activeRoom = {
+        el: null,
+        room: null
+      };
+      var roomTitle;
+      var chat;
+      var programmaticLogonEnabled = false;
+
+      // On page load
+      window.addEventListener("load", function() {
+        roomTitle = document.getElementById("room-title");
+        activeRoom.el = document.getElementById("active-room");
+
+        if (location.protocol === "file:") {
+          document.getElementById("warning").style.display = "block";
+        }
+
+        var roomsElement = document.getElementById("rooms");
+
+        for (var i = 0; i < SURFACES.length; i++) {
+          var div = document.createElement("div");
+          rooms.push({
+            el: div,
+            room: null
+          });
+          roomsElement.appendChild(div);
+        }
+
+        rooms.forEach(function(item, ix) {
+          item.room = document.getElementById(SURFACES[ix]);
+          var rect = item.el.getBoundingClientRect();
+          item.room.style.top = rect.top + window.pageYOffset + "px";
+          item.room.style.left = rect.left + window.pageXOffset + "px";
+        });
+
+        // Programmatic logon checkbox
+        document.getElementById("programmatic-logon-enable").addEventListener("change", function() {
+          programmaticLogonEnabled = this.checked;
+          document.getElementById("programmatic-logon-box").style.display = programmaticLogonEnabled ? "block" : "none";
+        });
+
+        // Get the account name and initialise the plugin API
+        document.getElementById("submit-account-input").addEventListener("click", function() {
+          var value = document.getElementById("account-input").value.trim();
+          if (value) {
+            accountName = value;
+            activeRoom.el.getElementsByTagName("form")[0].style.display = "none";
+            document.getElementById("account-title").textContent = value;
+            initialise();
+          }
+        });
+      });
+
+      function initialise() {
+        // initialise the plugin API
+        chat = new meetandengage();
+
+        chat.initialise({
+          // Select from the supported locale strings. The default is en-gb
+          locale: "en-gb",
+          // Account string, echoing the account name configured. Note that multiple accounts may have been configured for a business to reflect different business areas
+          account: accountName,
+          // DOM object of target element on the page to which the event surface will be appended.
+          eventTarget: document.getElementById("chat-room").getElementsByTagName("div")[0],
+          // called when identity information is available for a logged on user
+          identitycallback: function(user) {
+            console.log("User:", user);
+
+            if (user.email) {
+              var el = document.getElementById("user-title");
+              while (el.firstChild) {
+                el.removeChild(el.firstChild);
+              }
+              el.appendChild(document.createTextNode(user.email + " "));
+
+              // Logout button
+              var a = document.createElement("a");
+              a.textContent = "Logout";
+              a.href = "https://test.meetandengage.com/logoff";
+              el.appendChild(a);
+            }
+          },
+          // called when event state changes (e.g. meeting over / meeting start etc)
+          onstatechange: function(ret) {
+            switch (ret.statecode) {
+              case 0: // initialised
+                // No action needed.. Just letting you know the API is now initialised.
+                console.log("initialised");
+                // Optionally do a programmatic logon after the plugin has been initialised
+                if (programmaticLogonEnabled) {
+                  programmaticLogon();
+                }
+                getEvents(); // After initialisation get upcoming and running events
+                break;
+              case 1: // gotologon
+                // The user is not logged on, or has just logged off. Your code should display the logon dialog with the logonbox function
+                console.log("gotologon");
+                chat.showLogonDialog({
+                  target: document.getElementById("login-room").getElementsByTagName("div")[0]
+                });
+                activateSurface(document.getElementById("login-room"));
+                break;
+              case 2: // gotolobby
+                // The chat event is in lobby mode. Either the moderator has not yet opened the event or set it to locked. Your code should display the lobby and wait for state changes.
+                console.log("gotolobby");
+                chat.showLobbyContent({
+                  target: document.getElementById("lobby-room").getElementsByTagName("div")[0]
+                });
+                activateSurface(document.getElementById("lobby-room"));
+                break;
+              case 3: // gotoeventroom
+                // The chat event is now open. Your code should call the chatnow function to begin rendering the chat.
+                console.log("gotoeventroom");
+                chat.chatNow();
+                activateSurface(document.getElementById("chat-room"));
+                break;
+              case 4: // gotoexitlobby
+                // The chat event has finished. Your code should display the exit lobby and wait for state updates
+              case 5: // gotomanualexit
+                // The user has pressed the exit button. The event is no longer being watched by this API.
+                console.log("gotoexitlobby");
+                chat.showExitLobbyContent({
+                  target: document.getElementById("exitlobby-room").getElementsByTagName("div")[0]
+                });
+                activateSurface(document.getElementById("exitlobby-room"));
+                break;
+              case 6: // constrainedtopopup
+                // This event has been configured to run in a popup by the organiser. The participant journey will be managed within the launched popup.
+                console.log("constrainedtopopup");
+                break;
+              case 7: // showregistration
+                // Registration for this event is open. Your code should display the registration dialog
+                console.log("showregistration");
+                chat.showRegistrationDialog({
+                  target: document.getElementById("registration-room").getElementsByTagName("div")[0]
+                });
+                activateSurface(document.getElementById("registration-room"));
+                break;
+              case 8: // registered
+                // User is registered for this event.
+                console.log("registered");
+                chat.showRegistrationComplete({
+                  target: document.getElementById("registered-room").getElementsByTagName("div")[0]
+                });
+                activateSurface(document.getElementById("registered-room"));
+                break;
+              case 9: // registrationisfull
+                // Registration for this event is full, or has been closed manually by the event organiser
+                console.log("registrationisfull");
+                chat.showRegistrationFullDialog({
+                  target: document.getElementById("registrationfull-room").getElementsByTagName("div")[0]
+                });
+                activateSurface(document.getElementById("registrationfull-room"));
+                break;
+              case 10: // logonerror
+                // The previous logon attempt failed.
+                console.log("logonerror");
+                activateSurface(document.getElementById("logonerror-room"));
+                break;
+              case 11: // showregistrationdisabled
+                // Registration is disabled for this event. Your code should display the 'thanks for your interest' dialog
+                console.log("showregistrationdisabled");
+                chat.showRegistrationDisabledDialog({
+                  target: document.getElementById("registrationdisabled-room").getElementsByTagName("div")[0]
+                });
+                activateSurface(document.getElementById("registrationdisabled-room"));
+                break;
+              case 12: // showmissedevent
+                // The user missed the requested event. Your code should display the Missed Event dialog
+                console.log("showmissedevent");
+                chat.showMissedEventDialog({
+                  target: document.getElementById("missedevent-room").getElementsByTagName("div")[0]
+                });
+                activateSurface(document.getElementById("missedevent-room"));
+                break;
+              case 13: // goto121queue
+                // There is a queue for this 121 event. Show 'waiting for 121 agent' copy and wait for state updates
+                console.log("goto121queue");
+                chat.show121queuecontent({
+                  target: document.getElementById("121queue-room").getElementsByTagName("div")[0]
+                });
+                activateSurface(document.getElementById("121queue-room"));
+                break;
+              default:
+                console.log("Unhandled state:", ret.statecode);
+            }
+          }
+        });
+      }
+
+      function getEvents() {
+        var table = document.getElementById("events-room").getElementsByTagName("table")[0];
+
+        // Remove any pre-existing events from the list
+        while (table.hasChildNodes()) {
+          table.removeChild(table.lastChild);
+        }
+
+        // call the getEvents() function on page load, which returns a JavaScript array containing upcoming and running events.
+        // Your page parses and plots the information somewhere on the page, presenting a ‘join now’ button or similar for any running events
+        chat.getEvents(function(eventsarray) {
+          for (var event in eventsarray) {
+            var strstart = new Date(eventsarray[event].eventstart);
+            var strfinish = new Date(eventsarray[event].eventfinish);
+            var times = pad(strstart.getHours()) + ":" + pad(strstart.getMinutes()) + " " + strstart.getDate() + "/" + (strstart.getMonth() + 1) + " - " + pad(strfinish.getHours()) + ":" + pad(strfinish.getMinutes()) + " " + strfinish.getDate() +
+              "/" + (strfinish.getMonth() + 1);
+            var description = eventsarray[event].description;
+            var title = eventsarray[event].title;
+            var eventid = eventsarray[event].eventid;
+            var joinnow = eventsarray[event].joinnow; // Whether the event can be joined immediately
+
+            var tr = document.createElement('tr');
+
+            var td1 = document.createElement('td');
+            var td2 = document.createElement('td');
+
+            var button = document.createElement('button');
+            button.textContent = joinnow ? "Join now" : "Register";
+            button.setAttribute("data-id", eventid);
+            button.addEventListener("click", joinnow ? join : register);
+
+            td1.textContent = title;
+            td2.appendChild(button);
+
+            tr.appendChild(td1);
+            tr.appendChild(td2);
+            table.appendChild(tr);
+          }
+
+          activateSurface(document.getElementById("events-room"));
+        });
+      }
+
+      // The user notices an interesting event and clicks on your ‘join now’ button. You call the joinevent() function accordingly, supplying the eventID
+      function join() {
+        var id = this.getAttribute("data-id");
+        console.log("Joining event:", id);
+        chat.joinevent({
+          eventID: id
+        });
+        // If user has been logged on programmatically, call chatNow() immediately
+        if (programmaticLogonEnabled) {
+          chat.chatNow();
+        }
+      }
+
+      function register() {
+        var id = this.getAttribute("data-id");
+        console.log("Registering for event:", id);
+        chat.registerForEvent({
+          eventID: id
+        });
+      }
+
+      function programmaticLogon() {
+        chat.programmaticLogon({
+          guest: document.getElementById("programmatic-logon-guest").checked, // if true, the other attributes are not required
+          displayname: document.getElementById("programmatic-logon-name").value, // "John Smith"
+          email: document.getElementById("programmatic-logon-email").value, // Optional, but used as identifier if provided
+        }, function() {
+
+        });
+      }
+
+      function pad(n) {
+        return ("0" + n).slice(-2);
+      }
+
+      function activateSurface(room) {
+        if (activeRoom.room) {
+          if (activeRoom.room === room) {
+            return;
+          }
+          for (var i = 0; i < rooms.length; i++) {
+            if (!rooms[i].room) {
+              rooms[i].room = activeRoom.room;
+              rooms[i].room.className = rooms[i].room.className.replace(/(?:^|\s)active(?!\S)/g, "");
+              moveRoom(rooms[i].room, rooms[i].el, true);
+              break;
+            }
+          }
+        }
+
+        if (!room) {
+          roomTitle.textContent = "None";
+          return;
+        }
+
+        for (var i = 0; i < rooms.length; i++) {
+          if (rooms[i].room === room) {
+            rooms[i].room = null;
+            break;
+          }
+        }
+
+        activeRoom.room = room;
+        activeRoom.room.className += " active";
+
+        moveRoom(activeRoom.room, activeRoom.el, true);
+
+        roomTitle.textContent = activeRoom.room.getElementsByTagName("h2")[0].textContent;
+      }
+
+      // Recalculate room coordinates on resize
+      window.addEventListener("resize", function() {
+        if (activeRoom.room) {
+          moveRoom(activeRoom.room, activeRoom.el);
+        }
+        rooms.forEach(function(item) {
+          if (item.room) {
+            moveRoom(item.room, item.el);
+          }
+        });
+      });
+
+      function moveRoom(source, target, transition) {
+        if (transition) {
+          if (source.className.indexOf("transition") < 0) {
+            source.className += " transition";
+          }
+        } else {
+          source.className = source.className.replace(/(?:^|\s)transition(?!\S)/g, "");
+        }
+        var rect = target.getBoundingClientRect();
+        source.style.top = rect.top + window.pageYOffset + "px";
+        source.style.left = rect.left + window.pageXOffset + "px";
+      }
+    })();
+  </script>
+</head>
+
+<body>
+  <h1>Meet and Engage Plugin Demo</h1>
+
+  <p id="warning">Warning: You are loading this file from your local filesystem. Automatic redirections might not work.</p>
+
+  <h2>Available rooms</h2>
+
+  <div id="rooms"></div>
+
+  <div id="info">
+    <h3>Account name: <span id="account-title">None</span></h3>
+    <h3>User: <span id="user-title">None</span></h3>
+    <h3>Active room: <span id="room-title">None</span></h3>
+  </div>
+
+  <div id="active-room">
+    <form action="javascript:void(0);">
+      <div>
+        <h3>Account name</h3>
+      </div>
+      <div>
+        <input type="text" id="account-input" name="account-input" placeholder="Your Meet and Engage account name">
+      </div>
+      <div>
+        <input id="programmatic-logon-enable" type="checkbox">
+        <label for="programmatic-logon-enable">Programmatic logon?</label>
+      </div>
+      <div id="programmatic-logon-box" style="display:none">
+        <input id="programmatic-logon-guest" type="checkbox">
+        <label for="programmatic-logon-guest">Guest?</label>
+        <input type="text" id="programmatic-logon-email" placeholder="Your email address">
+        <input type="text" id="programmatic-logon-name" placeholder="Display name">
+      </div>
+      <div>
+        <button type="submit" id="submit-account-input">Submit</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="events-room" class="room">
+    <h2>Events list</h2>
+    <table></table>
+  </div>
+
+  <div id="login-room" class="room">
+    <h2>Login</h2>
+    <div></div>
+  </div>
+
+  <div id="logonerror-room" class="room">
+    <h2>Login error</h2>
+    <div>Login failed.</div>
+  </div>
+
+  <div id="lobby-room" class="room">
+    <h2>Lobby</h2>
+    <div></div>
+  </div>
+
+  <div id="chat-room" class="room">
+    <h2>Chat</h2>
+    <div></div>
+  </div>
+
+  <div id="exitlobby-room" class="room">
+    <h2>Exit lobby</h2>
+    <div></div>
+  </div>
+
+  <div id="registration-room" class="room">
+    <h2>Register</h2>
+    <div></div>
+  </div>
+
+  <div id="registered-room" class="room">
+    <h2>Registered</h2>
+    <div></div>
+  </div>
+
+  <div id="registrationdisabled-room" class="room">
+    <h2>Registration disabled</h2>
+    <div></div>
+  </div>
+
+  <div id="registrationfull-room" class="room">
+    <h2>Registration full</h2>
+    <div></div>
+  </div>
+
+  <div id="missedevent-room" class="room">
+    <h2>Missed event</h2>
+    <div></div>
+  </div>
+
+  <div id="121queue-room" class="room">
+    <h2>121 queue</h2>
+    <div></div>
+  </div>
+
+</body>
+
+</html>
